@@ -1,0 +1,17 @@
+{
+    "type":"record",
+    "name":"RawEmail",
+    "fields":
+    [
+        {
+            "name":"thread_id",
+            "type":["string", "null"],
+            "doc":""
+        },
+        {
+            "name":"raw_email",
+            "type": ["string", "null"],
+            "doc":""
+        }
+    ]
+}
