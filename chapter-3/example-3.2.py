@@ -4,11 +4,13 @@ from avro import schema, datafile, io
 import pprint
 # Test reading avros
 rec_reader = io.DatumReader()
-OUTFILE_NAME = '/tmp/messages.avro'
+#INFILE_NAME = '/tmp/messages.avro'
+#INFILE_NAME = '/tmp/test-schema-messages.avro'
+INFILE_NAME = '/tmp/myemails.avro'
 
-# Create a 'data file' (avro file) reader
+# Open a 'data file' (avro file) reader
 df_reader = datafile.DataFileReader(
-  open(OUTFILE_NAME),
+  open(INFILE_NAME),
   rec_reader
 )
 
