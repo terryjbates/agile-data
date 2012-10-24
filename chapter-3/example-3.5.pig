@@ -1,6 +1,6 @@
-REGISTER /usr/local/pig-0.10.0/contrib/piggybank/java/piggybank.jar
-REGISTER /usr/local/pig-0.10.0/build/ivy/lib/Pig/avro-1.5.3.jar
-REGISTER /usr/local/pig-0.10.0/build/ivy/lib/Pig/json-simple-1.1.jar
+REGISTER /usr/local/pig/contrib/piggybank/java/piggybank.jar
+REGISTER /usr/local/pig/build/ivy/lib/Pig/avro-1.5.3.jar
+REGISTER /usr/local/pig/build/ivy/lib/Pig/json-simple-1.1.jar
 
 /* This gives us a shortcut to call our Avro storage function */
 DEFINE AvroStorage org.apache.pig.piggybank.storage.avro.AvroStorage();
@@ -10,7 +10,7 @@ rmf '/tmp/sent_counts.txt'
 -- The below command from the website is *wrong*
 -- messages = LOAD '/tmp/my_emails.avro' USING AvroStorage();
 -- Use this instead so that the subsequent commands have a clue as to what you are talking about
-messages = LOAD '/tmp/myemails.avro' USING AvroStorage() AS (thread_id:int, date:chararray, from:chararray, to:chararray, subject:chararray);
+messages = LOAD '/tmp/my_emails.avro' USING AvroStorage() AS (thread_id:int, date:chararray, from:chararray, to:chararray, subject:chararray);
 
 
 -- Filter out missing from/to addresses to limit our processed data to valid records

@@ -4,9 +4,11 @@ import imaplib
 import getpass
 from avro import schema, datafile, io
 import re
+import argparse
+
 
 MAILBOX = 'bala'
-OUTFILE_NAME = '/tmp/myemails.avro'
+OUTFILE = '/tmp/my_emails.avro'
 
 #    headers = "Content-Transfer-Encoding Content-Type Date Delivered-To From In-Reply-To MIME-Version Message-ID Received-SPF Received References Return-Path Subject To X-Gmail-Received X-Mailer".split()
 
@@ -14,32 +16,35 @@ SCHEMA_STR = """{
     "type": "record",
     "name": "rawEmail",
     "fields" : [
-      { "name": "thread_id", "type": "int"},
+      { "name": "Message_ID", "type": "string"},
       { "name":"Date", "type": ["string", "null"] },
       { "name":"From", "type": ["string", "null"] },
       { "name":"To", "type": ["string", "null"] },
       { "name":"Subject", "type": ["string", "null"] }
     ]
 }"""
+
 SCHEMA = schema.parse(SCHEMA_STR)
 # Create a 'record' (datum) writer
 rec_writer = io.DatumWriter(SCHEMA)
 
-# Create a 'data file' (avro file) writer
-df_writer = datafile.DataFileWriter(
-  open(OUTFILE_NAME, 'wb'),
-  rec_writer,
-  writers_schema = SCHEMA
-)
+# # Create a 'data file' (avro file) writer
+# df_writer = datafile.DataFileWriter(
+#   open(OUTFILE_NAME, 'wb'),
+#   rec_writer,
+#   writers_schema = SCHEMA
+# )
 
-# num = 5
-# #df_writer.append( {"thread_id": "11", "raw_email": "Hello galaxy"})
-# df_writer.append({"thread_id": 1, "X-Gmail-Received": "cc09b4acea40a207739a8e29311ad12a9c6ae154"})
-# df_writer.append( {"thread_id": num, "X-Gmail-Received": "foobar"}) 
-# df_writer.close()
+def obtain_df_writer(filename):
+    return  datafile.DataFileWriter(
+        open(filename, 'wb'),
+        rec_writer,
+        writers_schema = SCHEMA
+        )
 
 
-def read_messages(imap, mbox):
+
+def read_messages(imap, mbox, df_writer):
     # obtain all email messages
     typ, data = imap.search(None, 'ALL')
     
@@ -49,10 +54,9 @@ def read_messages(imap, mbox):
     # get a list of headers ready
     # This may need to be dynamic for other us. Gmail may omit headers.
     #headers = "Content-Transfer-Encoding Content-Type Date Delivered-To From In-Reply-To MIME-Version Message-ID Received-SPF Received References Return-Path Subject To X-Gmail-Received X-Mailer".split()
-    headers = "From To Subject Date".split()
+    headers = "Message-ID From To Subject Date".split()
 
-    # start giving out thread ids at 1
-    thread_id = 1
+
     for num in data[0].split():
         typ, data = imap.fetch(num, '(RFC822)')
         #print 'Message %s\n%s\n' % (num, data[0][1])
@@ -61,7 +65,7 @@ def read_messages(imap, mbox):
         # huge string, multi-line string, we make a list and split it on lines
         raw_message = data[0][1].splitlines()
 
-        # creat a dictionary to store header info per message
+        # create a dictionary to store header info per message
         header_dict = {}
         
         for message_line in raw_message:
@@ -78,13 +82,13 @@ def read_messages(imap, mbox):
                 pass
                 #print "unmatched message line:\n%s\n\n" % message_line
         print header_dict    
-        df_writer.append({"thread_id": thread_id, "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
-        thread_id = thread_id + 1    
+        df_writer.append({"Message_ID": header_dict['Message-ID'], "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
+
             
     # Close the write on completion    
     df_writer.close()
                
-def init_imap(username, password, folder):
+def init_imap(username, password, mbox):
     # minimalistic code at bottom of http://docs.python.org/library/imaplib.html
     # import getpass, imaplib
     # 
@@ -100,20 +104,43 @@ def init_imap(username, password, folder):
 
     imap = imaplib.IMAP4_SSL('imap.gmail.com', 993)
     imap.login(username, password)
+
     # Use  imap.list() for a list of mailboxes
     # use imap.select(<name>) to choose one to work with
     # In our example, we use "bala"
 
-    # 
-    status, count = imap.select(folder)
+    # obtain the status and the message count
+    status, count = imap.select(mbox)
+
+    # return the imap object and the message count
     return imap, count
 
 def main():
+    parser = argparse.ArgumentParser (
+        description = 'script to scrap Gmail via IMAP')
+
+    parser.add_argument(
+        '--file', type=str,
+        help='output file of downloaded emails to in .avro format',
+        default=OUTFILE)
+
+    parser.add_argument(
+        '--mbox', type=str,
+        help='mailbox we wish to scrape',
+        default=MAILBOX)
+
+    args = parser.parse_args()
+
+    # Prompt for gmail user/pass
     username = raw_input("please enter your username: ")
     password = getpass.getpass("please enter your password: ")
-    (imap, count) = init_imap(username,password,MAILBOX)
+
+    df_writer = obtain_df_writer(args.file)
+
+    # We return the total count of messages and the imap object
+    (imap, count) = init_imap(username, password, args.mbox)
     print "Count is " , count
-    read_messages(imap, MAILBOX)
+    read_messages(imap, args.mbox, df_writer)
     imap.close()
 
 if __name__ == '__main__':
