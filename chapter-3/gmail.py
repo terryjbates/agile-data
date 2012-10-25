@@ -16,7 +16,7 @@ SCHEMA_STR = """{
     "type": "record",
     "name": "rawEmail",
     "fields" : [
-      { "name": "Message_ID", "type": "string"},
+      { "name": "Message_ID", "type": ["string", "null"]},
       { "name":"Date", "type": ["string", "null"] },
       { "name":"From", "type": ["string", "null"] },
       { "name":"To", "type": ["string", "null"] },
@@ -82,7 +82,26 @@ def read_messages(imap, mbox, df_writer):
                 pass
                 #print "unmatched message line:\n%s\n\n" % message_line
         print header_dict    
-        df_writer.append({"Message_ID": header_dict['Message-ID'], "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
+
+        # deal with empty message IDs
+        if not header_dict.has_key('Message-ID'):
+            header_dict['Message-ID'] = "NULL"
+        
+        # deal with empty 'To' fields
+        if not header_dict.has_key('To'):
+            header_dict['To']= "<terryjbates@gmail.com>"
+
+        # deal with unicode strings in subject lines
+        try:
+            header_dict['Subject'] = header_dict['Subject'].decode('utf8')
+            df_writer.append({"Message_ID": header_dict['Message-ID'], "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
+        except UnicodeDecodeError, e:
+            #header_dict['Subject'] = header_dict['Subject'].decode('ascii')
+            print "we have unicode error with %s" % header_dict['Subject']
+            print "Exception is %s", e
+            #pass
+
+#        df_writer.append({"Message_ID": header_dict['Message-ID'], "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
 
             
     # Close the write on completion    
