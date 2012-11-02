@@ -6,11 +6,18 @@ from avro import schema, datafile, io
 import re
 import argparse
 
+# Import a modules to assist in extracting email headers
+import email
+import mail_parse
+
+# Use this to try and prevent unicode/ascii errors
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
 
 MAILBOX = 'bala'
 OUTFILE = '/tmp/my_emails.avro'
 
-#    headers = "Content-Transfer-Encoding Content-Type Date Delivered-To From In-Reply-To MIME-Version Message-ID Received-SPF Received References Return-Path Subject To X-Gmail-Received X-Mailer".split()
 
 SCHEMA_STR = """{
     "type": "record",
@@ -24,18 +31,28 @@ SCHEMA_STR = """{
     ]
 }"""
 
+# Creat our schma object
 SCHEMA = schema.parse(SCHEMA_STR)
+
 # Create a 'record' (datum) writer
 rec_writer = io.DatumWriter(SCHEMA)
 
-# # Create a 'data file' (avro file) writer
-# df_writer = datafile.DataFileWriter(
-#   open(OUTFILE_NAME, 'wb'),
-#   rec_writer,
-#   writers_schema = SCHEMA
-# )
+
+def process_email_header(email_header_field):
+    '''This function returns only the email address, when given tuple of "From" or "To" email header field'''
+    email_header_field =('', '') if not email_header_field else email_header_field[0]
+    # If we have human name and email address, only grab the email address
+    if len(email_header_field) == 2:
+        email_header_field = email_header_field[1]
+    # Otherwise, just grab the email address
+    else:
+        email_header_field = email_header_field[0]
+
+    return email_header_field
+
 
 def obtain_df_writer(filename):
+    '''This returns a df writer object to send data to .avro file.'''
     return  datafile.DataFileWriter(
         open(filename, 'wb'),
         rec_writer,
@@ -43,65 +60,69 @@ def obtain_df_writer(filename):
         )
 
 
-
 def read_messages(imap, mbox, df_writer):
-    # obtain all email messages
+    '''Connect to an IMAP server, given a particular inbox, write out the data to a df write object. '''
+    # obtain all email messages (or as many as we will be given).
     typ, data = imap.search(None, 'ALL')
-    
-    # create a pattern to extract headers
-    #pattern = re.compile('^(.+)\: (.+)')
-    pattern = re.compile('^(.+?)\: (.+)$')
-    # get a list of headers ready
-    # This may need to be dynamic for other us. Gmail may omit headers.
-    #headers = "Content-Transfer-Encoding Content-Type Date Delivered-To From In-Reply-To MIME-Version Message-ID Received-SPF Received References Return-Path Subject To X-Gmail-Received X-Mailer".split()
-    headers = "Message-ID From To Subject Date".split()
 
 
     for num in data[0].split():
         typ, data = imap.fetch(num, '(RFC822)')
+
         #print 'Message %s\n%s\n' % (num, data[0][1])
-
         # We obtain the actual raw message, since it is one
-        # huge string, multi-line string, we make a list and split it on lines
-        raw_message = data[0][1].splitlines()
-
-        # create a dictionary to store header info per message
-        header_dict = {}
+        # huge string, multi-line string.
+        raw_message = data[0][1]
+        msg = email.message_from_string(raw_message)
         
-        for message_line in raw_message:
-            message_pattern_match = re.match(pattern, message_line)
-            
-            # So, if we have an actual match object
-            # and the first parenthetical match is in our 'headers list
-            # and the value has not been 'seen' yet within our seen_dict
-            if message_pattern_match and message_pattern_match.group(1) in headers and not header_dict.has_key(message_pattern_match.group(1)):
-                # Added the 'seen' header to our dictionary
-                # we do this to avoid multiple duplicated headers
-                header_dict[message_pattern_match.group(1)] = message_pattern_match.group(2)
-            else:
-                pass
-                #print "unmatched message line:\n%s\n\n" % message_line
-        print header_dict    
+        # Obtain email subject
+        subject = mail_parse.getmailheader(msg.get('Subject', ''))
+
+        # 'From' and 'To' have the long form of email header
+        # "Terry J Bates" <terryjbates@gmail.com>"
+        # we only want the email address.
+
+        from_ = mail_parse.getmailaddresses(msg, 'from')
+        from_ = process_email_header(from_)
+
+        tos = mail_parse.getmailaddresses(msg, 'to')
+        tos = process_email_header(tos)
+
+        print "From: %s To: %s" % (from_, tos)
+        # obtain the date and message id header fields
+        msg_date = mail_parse.getmailheader(msg.get('Date', ''))
+        msg_id = mail_parse.getmailheader(msg.get('Message-ID', ''))
+
 
         # deal with empty message IDs
-        if not header_dict.has_key('Message-ID'):
-            header_dict['Message-ID'] = "NULL"
+        if not msg_id:
+            msg_id = "NULL"
         
         # deal with empty 'To' fields
-        if not header_dict.has_key('To'):
-            header_dict['To']= "<terryjbates@gmail.com>"
+        if not tos:
+            tos = "<terryjbates@gmail.com>"
 
         # deal with unicode strings in subject lines
         try:
-            header_dict['Subject'] = header_dict['Subject'].decode('utf8')
-            df_writer.append({"Message_ID": header_dict['Message-ID'], "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
-        except UnicodeDecodeError, e:
-            #header_dict['Subject'] = header_dict['Subject'].decode('ascii')
-            print "we have unicode error with %s" % header_dict['Subject']
+            subject = subject.decode('utf8')
+        except UnicodeEncodeError, e:
+            print "we have unicode encode error with %r" % subject
             print "Exception is %s", e
-            #pass
+            # Beak out totally if we have no email subject
+            break
 
-#        df_writer.append({"Message_ID": header_dict['Message-ID'], "From": header_dict['From'],"Subject": header_dict['Subject'], "To": header_dict['To'], "Date": header_dict['Date']})
+        try:
+            from_ = from_.decode('utf8')
+            tos = tos.decode('utf8')
+            df_writer.append({"Message_ID": msg_id, "From": from_,"Subject": subject, "To": tos, "Date": msg_date})
+        except UnicodeDecodeError, e:
+            print "we have unicode decode error with %r" % subject
+            print "Exception is %s", e
+            continue
+        except UnicodeEncodeError, e:
+            print "we have unicode encod error with %r" % subject
+            print "Exception is %s", e
+            continue
 
             
     # Close the write on completion    
