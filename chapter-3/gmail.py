@@ -23,11 +23,16 @@ SCHEMA_STR = """{
     "type": "record",
     "name": "rawEmail",
     "fields" : [
-      { "name": "Message_ID", "type": ["string", "null"]},
-      { "name":"Date", "type": ["string", "null"] },
-      { "name":"From", "type": ["string", "null"] },
-      { "name":"To", "type": ["string", "null"] },
-      { "name":"Subject", "type": ["string", "null"] }
+      { "name": "message_id", "type": ["string", "null"]},
+      { "name":"date", "type": ["string", "null"] },
+      { "name":"from", "type": ["string", "null"] },
+      { "name":"to", "type": ["string", "null"] },
+      { "name":"cc", "type": ["string", "null"] },
+      { "name":"bcc", "type": ["string", "null"] },
+      { "name":"reply_to", "type": ["string", "null"] },
+      { "name":"in_reply_to", "type": ["string", "null"] },
+      { "name":"subject", "type": ["string", "null"] },
+      { "name":"body", "type": ["string", "null"] }
     ]
 }"""
 
@@ -36,6 +41,15 @@ SCHEMA = schema.parse(SCHEMA_STR)
 
 # Create a 'record' (datum) writer
 rec_writer = io.DatumWriter(SCHEMA)
+
+def get_msg_body(msg):
+    '''Function to extract the text body of a message.'''
+  for part in msg.walk():
+    if part.get_content_type() == "text/plain":
+        #yield part.get_payload(decode=1)    
+        return part.get_payload(decode=1)    
+    else:
+        continue
 
 
 def process_email_header(email_header_field):
@@ -91,8 +105,15 @@ def read_messages(imap, mbox, df_writer):
         print "From: %s To: %s" % (from_, tos)
         # obtain the date and message id header fields
         msg_date = mail_parse.getmailheader(msg.get('Date', ''))
-        msg_id = mail_parse.getmailheader(msg.get('Message-ID', ''))
+        msg_cc = mail_parse.getmailheader(msg.get('CC', ''))
+        msg_bcc = mail_parse.getmailheader(msg.get('Bcc', ''))
+        msg_reply_to = mail_parse.getmailheader(msg.get('Reply-To', ''))
+        msg_in_reply_to = mail_parse.getmailheader(msg.get('In-Reply-To', ''))
 
+        try:
+            msg_body = get_msg_body(msg)
+        except:
+            msg_body = ''
 
         # deal with empty message IDs
         if not msg_id:
@@ -114,7 +135,8 @@ def read_messages(imap, mbox, df_writer):
         try:
             from_ = from_.decode('utf8')
             tos = tos.decode('utf8')
-            df_writer.append({"Message_ID": msg_id, "From": from_,"Subject": subject, "To": tos, "Date": msg_date})
+            #df_writer.append({"Message_ID": msg_id, "From": from_,"Subject": subject, "To": tos, "Date": msg_date})
+            df_writer.append({"message_id": msg_id, "date": msg_date, "from": from_, "to": tos, "cc": msg_cc, "bcc": msg_bcc, "reply_to": msg_reply_to, "in_reply_to": msg_in_reply_to, "subject": subject, "body": msg_body})
         except UnicodeDecodeError, e:
             print "we have unicode decode error with %r" % subject
             print "Exception is %s", e
